@@ -1,0 +1,21 @@
+{
+  "name": "weather-windows-x402",
+  "version": "0.1.0",
+  "description": "US hourly weather windows for agents, payable via x402",
+  "scripts": {
+    "test": "node --test",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "wrangler deploy --dry-run --outdir dist"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@x402/core": "2.31.0",
+    "@x402/extensions": "2.31.0"
+  },
+  "devDependencies": {
+    "ajv": "8.18.0",
+    "wrangler": "4.165.0"
+  },
+  "type": "module"
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "weather-windows-x402",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-11-20",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": false
+  },
+  "ratelimits": [
+    {
+      "name": "HTTP_RATE",
+      "namespace_id": "101",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    },
+    {
+      "name": "PAYMENT_RATE",
+      "namespace_id": "102",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    },
+    {
+      "name": "FORECAST_RATE",
+      "namespace_id": "103",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ],
+  "vars": {
+    "FACILITATOR": "payai"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PAYMENT_ATTEMPTS",
+        "class_name": "PaymentAttempt"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "PaymentAttempt"
+      ]
+    }
+  ],
+  "assets": {
+    "directory": "./public"
+  }
+}
