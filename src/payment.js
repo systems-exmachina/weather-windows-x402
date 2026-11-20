@@ -3,7 +3,7 @@ import {
   HTTPFacilitatorClient,
 } from "@x402/core/http";
 import { SettleError, VerifyError } from "@x402/core/types";
-import { extensions, requirement, resource } from "./metadata.js";
+import { resource } from "./metadata.js";
 
 const facilitators = {
   payai: "https://facilitator.payai.network",
@@ -20,13 +20,13 @@ function sameAddress(left, right) {
   return typeof left === "string" && left.toLowerCase() === right.toLowerCase();
 }
 
-export function challenge(origin, error) {
-  const required = { x402Version: 2, resource: resource(origin), accepts: [requirement], extensions };
+export function challenge(origin, route, error) {
+  const required = { x402Version: 2, resource: resource(origin, route), accepts: [route.requirement], extensions: route.extensions };
   if (error) required.error = error;
   return encodePaymentRequiredHeader(required);
 }
 
-export function readPayment(header, origin) {
+export function readPayment(header, origin, route) {
   if (header.length > 12_288) return null;
   let decoded;
   try {
@@ -36,7 +36,8 @@ export function readPayment(header, origin) {
   }
   if (decoded?.x402Version !== 2) return null;
   const { accepted, payload } = decoded;
-  const endpoint = resource(origin);
+  const endpoint = resource(origin, route);
+  const { requirement, extensions } = route;
   if (accepted?.scheme !== requirement.scheme || accepted.network !== requirement.network
     || accepted.amount !== requirement.amount || !sameAddress(accepted.asset, requirement.asset)
     || !sameAddress(accepted.payTo, requirement.payTo) || accepted.maxTimeoutSeconds !== requirement.maxTimeoutSeconds
@@ -100,10 +101,10 @@ export function settlementState(settlement, payment) {
   if (settlement?.success === false && !pending.has(settlement.errorReason) && !settlement.transaction) {
     return "declined";
   }
-  if (settlement?.success !== true || settlement.network !== requirement.network
+  if (settlement?.success !== true || settlement.network !== payment.accepted.network
     || typeof settlement.transaction !== "string" || !bytes32.test(settlement.transaction)
     || (settlement.payer !== undefined && !sameAddress(settlement.payer, payment.payload.authorization.from))
-    || (settlement.amount !== undefined && settlement.amount !== requirement.amount)) {
+    || (settlement.amount !== undefined && settlement.amount !== payment.accepted.amount)) {
     return "pending";
   }
   return "paid";
@@ -113,9 +114,9 @@ export function settlementHeader(settlement, payment) {
   return encodePaymentResponseHeader({
     success: true,
     transaction: settlement.transaction,
-    network: requirement.network,
+    network: payment.accepted.network,
     payer: payment.payload.authorization.from,
-    amount: requirement.amount,
+    amount: payment.accepted.amount,
   });
 }
 

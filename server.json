@@ -1,0 +1,15 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.systems-exmachina/weather-windows",
+  "title": "ExMachina Weather Windows",
+  "description": "Preview US outdoor weather windows and global hourly forecasts. Links to the paid x402 API.",
+  "repository": {
+    "url": "https://github.com/systems-exmachina/weather-windows-x402",
+    "source": "github"
+  },
+  "version": "0.2.0",
+  "remotes": [{
+    "type": "streamable-http",
+    "url": "https://weather-windows-x402.exmachina-systems.workers.dev/mcp"
+  }]
+}

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import { validateDiscoveryExtension } from "@x402/extensions/bazaar";
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@x402/core/http";
-import { example, outputSchema, path, requirement, resource } from "../src/metadata.js";
+import { example, forecastRoute, outputSchema, path, requirement, resource } from "../src/metadata.js";
 import worker, { PaymentAttempt } from "../src/worker.js";
 import { calculateWindows, parseQuery } from "../src/weather.js";
 
@@ -16,6 +16,12 @@ const hourlyUrl = "https://api.weather.gov/gridpoints/LWX/97,71/forecast/hourly"
 const pointUrl = "https://api.weather.gov/points/38.90,-77.04";
 const syntheticSignature = "0x" + "12".repeat(65);
 const ok = { success: true, transaction: tx, network: requirement.network, payer, amount: "5000" };
+const forecastPoint = { data: {
+  instant: { details: {
+    air_temperature: 12, relative_humidity: 68, wind_speed: 4, wind_from_direction: 80, cloud_area_fraction: 5,
+  } },
+  next_1_hours: { details: { precipitation_amount: 0 }, summary: { symbol_code: "clearsky_day" } },
+} };
 
 function header(mutate = () => {}) {
   const payment = {
@@ -48,7 +54,7 @@ function hour(start, override = {}) {
   };
 }
 
-function harness(t, replies = {}, rate = {}) {
+function harness(t, replies = {}, rate = {}, initialRecord) {
   t.mock.method(Date, "now", () => now);
   const expected = [];
   const attempts = new Map();
@@ -58,11 +64,21 @@ function harness(t, replies = {}, rate = {}) {
     PAYMENT_RATE: permit(rate.payment),
     FORECAST_RATE: permit(rate.forecast),
     FACILITATOR: "payai",
+    MET_FORECAST: {
+      getByName: () => ({ fetch: async (url) => {
+        assert.match(url, /^https:\/\/api\.met\.no\/weatherapi\/locationforecast\/2\.0\/compact\?lat=35\.68&lon=139\.76$/);
+        expected.push("met forecast");
+        return Response.json({ properties: {
+          meta: { updated_at: "2026-11-20T10:00:00Z" },
+          timeseries: [12, 13, 15].map((hour) => ({ ...forecastPoint, time: `2026-11-20T${hour}:00:00Z` })),
+        } });
+      } }),
+    },
     PAYMENT_ATTEMPTS: {
       idFromName: (name) => name,
       get(id) {
         if (!attempts.has(id)) {
-          let value;
+          let value = initialRecord;
           const storage = {
             get: async () => structuredClone(value),
             put: async (_key, record) => { value = structuredClone(record); },
@@ -111,13 +127,16 @@ function harness(t, replies = {}, rate = {}) {
 
 test("unpaid GET and HEAD expose v2, payment terms and valid Bazaar discovery", async (t) => {
   const api = harness(t);
-  for (const [suffix, method] of [[path, "GET"], [path + query, "GET"], [path, "HEAD"]]) {
+  for (const [route, suffix, method] of [
+    [{ path, requirement }, path, "GET"], [{ path, requirement }, path + query, "GET"],
+    [{ path, requirement }, path, "HEAD"], [forecastRoute, forecastRoute.path, "GET"], [forecastRoute, forecastRoute.path, "HEAD"],
+  ]) {
     const response = await api.fetch(suffix, undefined, method);
     assert.equal(response.status, 402);
     const challenge = decodePaymentRequiredHeader(response.headers.get("PAYMENT-REQUIRED"));
     assert.equal(challenge.x402Version, 2);
-    assert.deepEqual(challenge.accepts, [requirement]);
-    assert.equal(challenge.resource.url, origin + path);
+    assert.deepEqual(challenge.accepts, [route.requirement]);
+    assert.equal(challenge.resource.url, origin + route.path);
     assert.equal(challenge.extensions.bazaar.info.input.method, "GET");
     assert.equal(validateDiscoveryExtension(challenge.extensions.bazaar).valid, true);
     const body = await response.text();
@@ -130,12 +149,54 @@ test("unpaid GET and HEAD expose v2, payment terms and valid Bazaar discovery", 
     price: { mode: "fixed", currency: "USD", amount: "0.005" }, protocols: [{ x402: {} }],
   });
   const discovery = await (await api.fetch("/.well-known/x402")).json();
-  assert.deepEqual(discovery.resources, [origin + path]);
-  const preview = await (await api.fetch("/preview")).json();
-  const validate = new Ajv2020().compile(outputSchema);
-  assert.equal(preview.sampleIsIllustrative, true);
-  assert.equal(validate(example), true);
+  assert.deepEqual(discovery.resources, [origin + path, origin + forecastRoute.path]);
+  assert.match(await (await api.fetch("/llms.txt")).text(), /0\.001 USDC/);
   assert.deepEqual(api.expected, []);
+});
+
+test("the free preview returns real samples with model timestamps and explicit gaps", async (t) => {
+  const api = harness(t);
+  const preview = await (await api.fetch("/preview")).json();
+  const ajv = new Ajv2020();
+  assert.equal(ajv.compile(outputSchema)(example), true);
+  assert.equal(preview.sampleIsIllustrative, false);
+  assert.equal(ajv.compile(outputSchema)(preview.sample), true);
+  const { live, result } = preview.hourlyForecast;
+  const validate = ajv.compile(forecastRoute.outputSchema);
+  assert.equal(validate(forecastRoute.example), true);
+  assert.equal(validate(result), true);
+  assert.equal(live, true);
+  assert.equal(result.current.windKph, 14.4);
+  assert.equal(result.hourly.length, 2);
+  assert.equal(result.complete, false);
+  assert.equal(result.source.license, "CC BY 4.0");
+  assert.equal(api.expected.includes("settle"), false);
+});
+
+test("global forecast settles its own price and cannot accept a weather-window authorization", async (t) => {
+  const paidPath = forecastRoute.path + "?lat=35.68&lon=139.76&hours=3";
+  const api = harness(t, {
+    verify(init) {
+      const body = JSON.parse(init.body);
+      assert.deepEqual(body.paymentRequirements, forecastRoute.requirement);
+      assert.equal(body.paymentPayload.resource.url, origin + forecastRoute.path);
+      assert.equal(validateDiscoveryExtension(body.paymentPayload.extensions.bazaar).valid, true);
+      return Response.json({ isValid: true, payer });
+    },
+    settle: () => Response.json({ ...ok, amount: "1000" }),
+  });
+  assert.equal((await api.fetch(paidPath, header())).status, 402);
+  assert.equal((await api.fetch(paidPath + "&daylightOnly=true")).status, 400);
+  const forecastPayment = header((payment) => {
+    payment.resource = resource(origin, forecastRoute);
+    payment.accepted.amount = "1000";
+    payment.payload.authorization.value = "1000";
+  });
+  const response = await api.fetch(paidPath, forecastPayment);
+  assert.equal(response.status, 200);
+  assert.equal(decodePaymentResponseHeader(response.headers.get("PAYMENT-RESPONSE")).amount, "1000");
+  assert.equal((await response.json()).hourly.length, 2);
+  assert.deepEqual(api.expected, ["verify", "met forecast", "settle"]);
 });
 
 test("query validation and mismatched or malformed authorizations never reach the facilitator", async (t) => {
@@ -174,6 +235,21 @@ test("paid request verifies, prepares and settles before release, then reuses th
   assert.deepEqual(await (await api.fetch(path + query, header())).json(), result);
   assert.equal((await api.fetch(path + query + "&maxRainPct=50", header())).status, 409);
   assert.equal(api.expected.length, 4);
+});
+
+test("a stored pre-forecast Weather Windows attempt still replays", async (t) => {
+  const receipt = "stored-payment-response";
+  const api = harness(t, {}, {}, {
+    // Fingerprint produced by the previously deployed Worker for this query and authorization.
+    fingerprint: "ab346b362cf91c31457fc1a79357eaebe3e7c93765d57b9c46196c186c768ca3",
+    report: example, facilitator: "payai", receipt,
+  });
+  const response = await api.fetch(path + query, header());
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("PAYMENT-RESPONSE"), receipt);
+  assert.deepEqual(await response.json(), example);
+  assert.equal((await api.fetch(path + query + "&maxRainPct=50", header())).status, 409);
+  assert.deepEqual(api.expected, []);
 });
 
 test("verification failure stops before the forecast and settlement", async (t) => {

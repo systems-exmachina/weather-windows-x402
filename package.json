@@ -1,6 +1,6 @@
 {
   "name": "weather-windows-x402",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "US hourly weather windows for agents, payable via x402",
   "scripts": {
     "test": "node --test",
@@ -10,6 +10,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@x402/core": "2.31.0",
     "@x402/extensions": "2.31.0"
   },

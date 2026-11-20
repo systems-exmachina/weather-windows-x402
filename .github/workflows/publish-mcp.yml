@@ -1,0 +1,46 @@
+name: Publish MCP Registry listing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Publish server.json with GitHub OIDC
+        run: |
+          node --input-type=module <<'JS'
+          import { readFile } from 'node:fs/promises';
+
+          async function json(url, options) {
+            const response = await fetch(url, options);
+            if (!response.ok) throw new Error(`${new URL(url).pathname} returned HTTP ${response.status}`);
+            return response.json();
+          }
+
+          const registry = 'https://registry.modelcontextprotocol.io';
+          const oidc = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          oidc.searchParams.set('audience', registry);
+          const { value } = await json(oidc, {
+            headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+          });
+          const { registry_token: token } = await json(`${registry}/v0/auth/github-oidc`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ oidc_token: value }),
+          });
+          await json(`${registry}/v0/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: await readFile('server.json', 'utf8'),
+          });
+          JS

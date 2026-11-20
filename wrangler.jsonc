@@ -40,6 +40,10 @@
   "durable_objects": {
     "bindings": [
       {
+        "name": "MET_FORECAST",
+        "class_name": "MetForecast"
+      },
+      {
         "name": "PAYMENT_ATTEMPTS",
         "class_name": "PaymentAttempt"
       }
@@ -51,6 +55,10 @@
       "new_sqlite_classes": [
         "PaymentAttempt"
       ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["MetForecast"]
     }
   ],
   "assets": {

@@ -17,21 +17,27 @@ const decimal = /^-?\d{1,3}(\.\d{1,6})?$/;
 const integer = /^-?\d{1,3}$/;
 const daylightDescription = "Require hours marked as daytime by the source. Defaults to true.";
 
-export const querySchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["lat", "lon"],
-  properties: {
-    ...Object.fromEntries(Object.entries(controls).map(([key, rule]) => [key, {
+function coordinateQuerySchema(rules) {
+  return {
+    type: "object", additionalProperties: false, required: ["lat", "lon"],
+    properties: Object.fromEntries(Object.entries(rules).map(([key, rule]) => [key, {
       type: "string",
       pattern: (rule.integer ? integer : decimal).source,
       maxLength: 11,
       description: `${rule.description} Range ${rule.min} to ${rule.max}.`,
       ...(rule.default === undefined ? {} : { default: String(rule.default) }),
     }])),
-    daylightOnly: { type: "string", enum: ["true", "false"], default: "true", description: daylightDescription },
-  },
+  };
+}
+
+const forecastControls = {
+  lat: { ...controls.lat, description: "Latitude of a public location worldwide." },
+  lon: { ...controls.lon, description: "Longitude of a public location worldwide." },
+  hours: { ...controls.hours, min: 1, max: 48, default: 24 },
 };
+export const forecastQuerySchema = coordinateQuerySchema(forecastControls);
+export const querySchema = coordinateQuerySchema(controls);
+querySchema.properties.daylightOnly = { type: "string", enum: ["true", "false"], default: "true", description: daylightDescription };
 
 export class WeatherError extends Error {
   constructor(status, code, message) {
@@ -42,18 +48,18 @@ export class WeatherError extends Error {
 }
 
 const badInput = (message) => new WeatherError(400, "invalid_input", message);
-const badForecast = () => new WeatherError(503, "forecast_unavailable", "A usable forecast is temporarily unavailable. No payment was submitted for settlement.");
+export const badForecast = () => new WeatherError(503, "forecast_unavailable", "A usable forecast is temporarily unavailable. No payment was submitted for settlement.");
 
-export function parseQuery(url) {
+function parseCoordinates(url, rules, schema) {
   if (url.search.length > 512) throw badInput("Query string exceeds 512 characters.");
   const params = url.searchParams;
   for (const key of params.keys()) {
-    if (!Object.hasOwn(querySchema.properties, key)) throw badInput("Unknown query parameter.");
+    if (!Object.hasOwn(schema.properties, key)) throw badInput("Unknown query parameter.");
     if (params.getAll(key).length !== 1) throw badInput("Duplicate query parameter.");
   }
 
   const input = {};
-  for (const [key, rule] of Object.entries(controls)) {
+  for (const [key, rule] of Object.entries(rules)) {
     const raw = params.get(key);
     if (raw === null && rule.default !== undefined) {
       input[key] = rule.default;
@@ -65,12 +71,21 @@ export function parseQuery(url) {
     }
     input[key] = value;
   }
-  const daylightOnly = params.get("daylightOnly") ?? "true";
+  input.lat = Number(input.lat.toFixed(2)) || 0;
+  input.lon = Number(input.lon.toFixed(2)) || 0;
+  return input;
+}
+
+export function parseForecastQuery(url) {
+  return parseCoordinates(url, forecastControls, forecastQuerySchema);
+}
+
+export function parseQuery(url) {
+  const input = parseCoordinates(url, controls, querySchema);
+  const daylightOnly = url.searchParams.get("daylightOnly") ?? "true";
   if (daylightOnly !== "true" && daylightOnly !== "false") throw badInput("daylightOnly must be true or false.");
   if (input.minTempC > input.maxTempC) throw badInput("minTempC must be less than or equal to maxTempC.");
   input.daylightOnly = daylightOnly === "true";
-  input.lat = Number(input.lat.toFixed(2)) || 0;
-  input.lon = Number(input.lon.toFixed(2)) || 0;
   return input;
 }
 
@@ -164,7 +179,10 @@ async function nwsJson(url, ttl, requestFetch) {
     throw badForecast();
   }
 
-  // The official hourly endpoint is about 160 KB for seven days.
+  return readForecastJson(response);
+}
+
+export async function readForecastJson(response) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let bytes = 0;
