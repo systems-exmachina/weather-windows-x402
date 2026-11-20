@@ -4,7 +4,7 @@ Find the next contiguous forecast hours that meet your limits for rain, sustaine
 
 ## Make a request
 
-`GET /v1/weather-windows?lat=38.90&lon=-77.04&hours=24`
+For a three-hour outdoor paint job in Washington, DC, look for a daylight window in the next 24 hours with at most 20% hourly rain probability and 25 km/h sustained wind. [Public API example](https://weather-windows-x402.exmachina-systems.workers.dev/v1/weather-windows?lat=38.90&lon=-77.04&hours=24&minWindowHours=3&maxRainPct=20&maxWindKph=25&daylightOnly=true) · [Free preview](https://weather-windows-x402.exmachina-systems.workers.dev/preview)
 
 Each completed call costs **0.005 native USDC on Base mainnet**. The unpaid response is HTTP 402 with the x402 v2 `PAYMENT-REQUIRED` header and Bazaar discovery metadata. Use an x402 v2 client with Base exact USDC (EIP-3009) support to authorize payment and retry with its `PAYMENT-SIGNATURE` header. Send the same query when retrying an authorization. The paid JSON response includes a `PAYMENT-RESPONSE` settlement receipt.
 
@@ -42,5 +42,7 @@ npm run dev
 ```sh
 curl -i 'http://localhost:8787/v1/weather-windows?lat=38.90&lon=-77.04&hours=24'
 ```
+
+Run `node scripts/earnings.mjs` to read inbound native USDC transfers to the payee on Base since launch. The script reports the block range, total, distinct senders, and five latest transfers. Set `BASE_RPC_URL` to use another Base RPC and `BASE_FROM_BLOCK` to choose the start block. Match these receipts to settlement hashes to attribute revenue to Weather Windows.
 
 License [MIT](LICENSE).

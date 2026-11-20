@@ -2,9 +2,12 @@ import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
 import { parseQuery, querySchema } from "./weather.js";
 
 export const path = "/v1/weather-windows";
-export const exampleQuery = { lat: "38.90", lon: "-77.04", hours: "24" };
+export const exampleQuery = {
+  lat: "38.90", lon: "-77.04", hours: "24", minWindowHours: "3",
+  maxRainPct: "20", maxWindKph: "25", daylightOnly: "true",
+};
 export const serviceName = "ExMachina Weather Windows";
-export const description = "Find contiguous US forecast hours for outdoor work that meet your precipitation, sustained wind, temperature, and daylight limits.";
+export const description = "Find contiguous U.S. forecast hours for outdoor work within your rain, sustained wind, temperature, and daylight limits. For a three-hour outdoor paint job in Washington, DC, find a daylight window in the next 24 hours with at most 20% hourly rain probability and 25 km/h sustained wind.";
 export const tags = ["weather", "forecast", "planning", "us"];
 export const requirement = {
   scheme: "exact",
