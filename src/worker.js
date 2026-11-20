@@ -30,6 +30,17 @@ function paymentRequired(origin, route, method = "GET", error) {
     error: error ?? "payment_required",
     message: `Pay ${route.price} USDC on Base using x402 v2. See PAYMENT-REQUIRED for the full challenge.`,
     example: exampleUrl(origin, route),
+    x402Version: 2,
+    resource: resource(origin, route),
+    accepts: [{
+      ...route.requirement,
+      // Some registries read the JSON response and still use the v1 amount field.
+      maxAmountRequired: route.requirement.amount,
+      description: route.description,
+      mimeType: "application/json",
+      outputSchema: route.outputSchema,
+    }],
+    extensions: route.extensions,
   }, 402, { "PAYMENT-REQUIRED": challenge(origin, route, error) }, method);
 }
 

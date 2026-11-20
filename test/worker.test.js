@@ -141,7 +141,14 @@ test("unpaid GET and HEAD expose v2, payment terms and valid Bazaar discovery", 
     assert.equal(validateDiscoveryExtension(challenge.extensions.bazaar).valid, true);
     const body = await response.text();
     if (method === "HEAD") assert.equal(body, "");
-    else assert.equal(JSON.parse(body).error, "payment_required");
+    else {
+      const document = JSON.parse(body);
+      assert.equal(document.error, "payment_required");
+      assert.equal(document.x402Version, challenge.x402Version);
+      assert.equal(document.resource.url, challenge.resource.url);
+      assert.equal(document.accepts[0].maxAmountRequired, route.requirement.amount);
+      assert.equal(document.accepts[0].amount, route.requirement.amount);
+    }
   }
 
   const spec = await (await api.fetch("/openapi.json")).json();
